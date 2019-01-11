@@ -1,0 +1,63 @@
+package utils
+
+import beans.Logs
+import org.apache.spark.sql.{DataFrame, SQLContext}
+import org.apache.spark.{SparkConf, SparkContext}
+
+/*
+要求一：  将数据转换成 parquet 文件格式,数据存储的时候的一种列式的存储方法.基于列的，查询起来比较快
+要求二：  序列化方式采用 KryoSerializer 方式,数据在进行序列化的一种序列化方式.这种序列化方式，只对需要进行序列的数据进行序列化，
+减少序列化的内容，节省了空间,提高速度。
+要求三：  parquet 文件采用 Snappy 压缩方式.
+*/
+object Data2Parquet {
+
+  def main(args: Array[String]) {
+
+
+    // 做参数的判断
+    if(args.length!=3){
+
+      // 多行打印
+      println(
+        """
+          |请输入如下的参数
+          | inputPath ： 数据输入的路径
+          | dataCompressionCode ： 压缩方式
+          | outPutPath ：数据的输出路径
+        """.stripMargin)
+
+      System.exit(0)
+    }
+
+    // 接收参数
+    val Array(inputPath,dataCompressionCode,outPutPath) = args
+
+    val conf =  new SparkConf().setAppName(s"${this.getClass.getSimpleName}").setMaster("local[3]")
+
+    // 1. 设置序列化的方式为kryo
+    conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
+    conf.set("spark.sql.parquet.compression.codec",dataCompressionCode)
+    // 2. 注册这个序列化的类
+    conf.registerKryoClasses(Array(classOf[Logs]))
+    val sc: SparkContext = new SparkContext(conf)
+
+    val sqlContext: SQLContext = new SQLContext(sc)
+
+    val lineRdd = sc.textFile(inputPath)
+    val logsRdd = lineRdd.map(line => {
+      Logs.line2Logs(line)
+    })
+
+    // logsRdd 转换为dataFrame
+    val logsDataFrame: DataFrame = sqlContext.createDataFrame(logsRdd)
+
+    // 输出为parquet的数据
+   //  logsDataFrame.write.parquet(outPutPath)
+    logsDataFrame.write.format("parquet").save(outPutPath)
+
+    sc.stop()
+
+  }
+
+}
